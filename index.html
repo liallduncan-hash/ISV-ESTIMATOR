@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ISV Blast &amp; Coat Estimating Tool</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:Georgia,serif;background:#0e1a24;color:#dde6ee;}
+#root{min-height:100vh;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script>
+// Polyfill window.storage for non-Claude environments
+if(!window.storage){window.storage={_s:{},async get(k){const v=localStorage.getItem("isv_"+k);if(v===null)throw new Error("not found");return{key:k,value:v}},async set(k,v){localStorage.setItem("isv_"+k,v);return{key:k,value:v}},async delete(k){localStorage.removeItem("isv_"+k);return{key:k,deleted:true}},async list(p){const keys=[];for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k.startsWith("isv_")&&(!p||k.slice(4).startsWith(p)))keys.push(k.slice(4));}return{keys};}};}
+
+const {useState,useCallback,useRef,useEffect,createElement:h}=React;
+
+const DEFAULT_SETTINGS={blastRate:30,appRatePerCoat:12,materialMarkup:30,highBuildThreshold:150,highBuildRate:18,companyName:"ISV"};
+const UB_TABLE={"150UB":0.72,"180UB":0.87,"200UB":0.95,"210UB":1.00,"250UB":1.18,"310UB":1.45,"360UB":1.67,"410UB":1.88,"460UB":2.10,"530UB":2.40,"610UB":2.74,"760UB":3.40};
+const DEFAULT_PRODUCTS=[
+{id:101,name:"Zincanode 402 Green Grey",brand:"Dulux",volumeSolids:48,costPerLitre:36.16,packSize:10,lastUpdated:"01/04/2025"},
+{id:102,name:"Zincanode 402 Grey",brand:"Dulux",volumeSolids:48,costPerLitre:36.16,packSize:10,lastUpdated:"01/04/2025"},
+{id:110,name:"Duremax GPE ZP Grey",brand:"Dulux",volumeSolids:72,costPerLitre:24.03,packSize:15,lastUpdated:"01/04/2025"},
+{id:115,name:"Duremax GPE N35 Light Grey",brand:"Dulux",volumeSolids:71,costPerLitre:22.86,packSize:15,lastUpdated:"01/04/2025"},
+{id:116,name:"Duremax GPE Black",brand:"Dulux",volumeSolids:71,costPerLitre:22.86,packSize:15,lastUpdated:"01/04/2025"},
+{id:117,name:"Duremax GPE MIO Mid Grey",brand:"Dulux",volumeSolids:69,costPerLitre:23.44,packSize:15,lastUpdated:"01/04/2025"},
+{id:118,name:"Duremax GPE White/Light Base",brand:"Dulux",volumeSolids:71,costPerLitre:27.12,packSize:15,lastUpdated:"01/04/2025"},
+{id:119,name:"Duremax GPE Deep Base",brand:"Dulux",volumeSolids:71,costPerLitre:32.22,packSize:15,lastUpdated:"01/04/2025"},
+{id:120,name:"Duremax GPE Clear Base",brand:"Dulux",volumeSolids:71,costPerLitre:36.17,packSize:15,lastUpdated:"01/04/2025"},
+{id:125,name:"Duremax HBE White/Light Base",brand:"Dulux",volumeSolids:88,costPerLitre:33.81,packSize:15,lastUpdated:"01/04/2025"},
+{id:126,name:"Duremax HBE Clear Base",brand:"Dulux",volumeSolids:88,costPerLitre:38.88,packSize:15,lastUpdated:"01/04/2025"},
+{id:127,name:"Duremax HBE Golden Yellow",brand:"Dulux",volumeSolids:88,costPerLitre:37.30,packSize:15,lastUpdated:"01/04/2025"},
+{id:130,name:"Durebild STE N35 Light Grey",brand:"Dulux",volumeSolids:83,costPerLitre:26.60,packSize:15,lastUpdated:"01/04/2025"},
+{id:131,name:"Durebild STE Black",brand:"Dulux",volumeSolids:83,costPerLitre:26.60,packSize:15,lastUpdated:"01/04/2025"},
+{id:132,name:"Durebild STE Aluminium",brand:"Dulux",volumeSolids:83,costPerLitre:27.28,packSize:15,lastUpdated:"01/04/2025"},
+{id:133,name:"Durebild STE White/Light Base",brand:"Dulux",volumeSolids:83,costPerLitre:26.70,packSize:15,lastUpdated:"01/04/2025"},
+{id:134,name:"Durebild STE Deep Base",brand:"Dulux",volumeSolids:83,costPerLitre:32.54,packSize:15,lastUpdated:"01/04/2025"},
+{id:135,name:"Durebild STE Clear Base",brand:"Dulux",volumeSolids:83,costPerLitre:40.55,packSize:15,lastUpdated:"01/04/2025"},
+{id:136,name:"Durebild STE Golden Yellow",brand:"Dulux",volumeSolids:83,costPerLitre:34.68,packSize:15,lastUpdated:"01/04/2025"},
+{id:140,name:"Weathermax HBR White",brand:"Dulux",volumeSolids:70,costPerLitre:44.51,packSize:4,lastUpdated:"01/04/2025"},
+{id:141,name:"Weathermax HBR Light Base",brand:"Dulux",volumeSolids:70,costPerLitre:44.51,packSize:4,lastUpdated:"01/04/2025"},
+{id:142,name:"Weathermax HBR Deep Base",brand:"Dulux",volumeSolids:70,costPerLitre:48.33,packSize:4,lastUpdated:"01/04/2025"},
+{id:143,name:"Weathermax HBR Clear Base",brand:"Dulux",volumeSolids:70,costPerLitre:52.49,packSize:4,lastUpdated:"01/04/2025"},
+{id:144,name:"Weathermax HBR Jet Black",brand:"Dulux",volumeSolids:70,costPerLitre:44.51,packSize:4,lastUpdated:"01/04/2025"},
+{id:145,name:"Weathermax HBR Golden Yellow LF",brand:"Dulux",volumeSolids:70,costPerLitre:49.21,packSize:4,lastUpdated:"01/04/2025"},
+{id:146,name:"Weathermax HBR Signal Red LF",brand:"Dulux",volumeSolids:70,costPerLitre:60.91,packSize:4,lastUpdated:"01/04/2025"},
+{id:150,name:"Luxathane HPX White",brand:"Dulux",volumeSolids:56,costPerLitre:37.17,packSize:4,lastUpdated:"01/04/2025"},
+{id:151,name:"Luxathane HPX Light Tint Base",brand:"Dulux",volumeSolids:56,costPerLitre:38.49,packSize:4,lastUpdated:"01/04/2025"},
+{id:152,name:"Luxathane HPX Deep Tint Base",brand:"Dulux",volumeSolids:56,costPerLitre:41.13,packSize:4,lastUpdated:"01/04/2025"},
+{id:153,name:"Luxathane HPX Clear Tint Base",brand:"Dulux",volumeSolids:56,costPerLitre:43.76,packSize:4,lastUpdated:"01/04/2025"},
+{id:154,name:"Luxathane HPX Black",brand:"Dulux",volumeSolids:56,costPerLitre:39.57,packSize:4,lastUpdated:"01/04/2025"},
+{id:155,name:"Luxathane HPX Golden Yellow",brand:"Dulux",volumeSolids:56,costPerLitre:43.34,packSize:4,lastUpdated:"01/04/2025"},
+{id:160,name:"Luxathane SPX White",brand:"Dulux",volumeSolids:52,costPerLitre:36.01,packSize:4,lastUpdated:"01/04/2025"},
+{id:161,name:"Luxathane SPX Light Base",brand:"Dulux",volumeSolids:52,costPerLitre:36.01,packSize:4,lastUpdated:"01/04/2025"},
+{id:162,name:"Luxathane SPX Deep Base",brand:"Dulux",volumeSolids:52,costPerLitre:39.61,packSize:4,lastUpdated:"01/04/2025"},
+{id:163,name:"Luxathane SPX Clear Base",brand:"Dulux",volumeSolids:52,costPerLitre:40.80,packSize:4,lastUpdated:"01/04/2025"},
+{id:164,name:"Luxathane SPX Black",brand:"Dulux",volumeSolids:52,costPerLitre:39.06,packSize:4,lastUpdated:"01/04/2025"},
+{id:201,name:"Interzinc 22",brand:"International",volumeSolids:63,costPerLitre:29.50,packSize:14,lastUpdated:"10/03/2023"},
+{id:205,name:"Interzinc 52 Grey",brand:"International",volumeSolids:59,costPerLitre:38.73,packSize:10,lastUpdated:"10/03/2023"},
+{id:210,name:"Intercure 200 MIO Light Grey",brand:"International",volumeSolids:67,costPerLitre:26.09,packSize:20,lastUpdated:"10/03/2023"},
+{id:211,name:"Intercure 200 Sand",brand:"International",volumeSolids:67,costPerLitre:25.84,packSize:20,lastUpdated:"10/03/2023"},
+{id:220,name:"Interplus 1180 Base Light",brand:"International",volumeSolids:84,costPerLitre:21.38,packSize:20,lastUpdated:"10/03/2023"},
+{id:221,name:"Interplus 1180 White",brand:"International",volumeSolids:84,costPerLitre:21.38,packSize:20,lastUpdated:"10/03/2023"},
+{id:222,name:"Interplus 1180 MIO Metallic Grey",brand:"International",volumeSolids:84,costPerLitre:21.77,packSize:20,lastUpdated:"10/03/2023"},
+{id:223,name:"Interplus 1180 MIO N33 Lt Box Grey",brand:"International",volumeSolids:84,costPerLitre:21.38,packSize:20,lastUpdated:"10/03/2023"},
+{id:224,name:"Interplus 1180 Aluminium",brand:"International",volumeSolids:84,costPerLitre:24.60,packSize:20,lastUpdated:"10/03/2023"},
+{id:225,name:"Interplus 1180 Golden Yellow",brand:"International",volumeSolids:84,costPerLitre:25.47,packSize:20,lastUpdated:"10/03/2023"},
+{id:226,name:"Interplus 1180 Base Ultra Deep",brand:"International",volumeSolids:84,costPerLitre:23.12,packSize:20,lastUpdated:"10/03/2023"},
+{id:227,name:"Interplus 1180 N53 Blue Grey",brand:"International",volumeSolids:84,costPerLitre:22.05,packSize:20,lastUpdated:"10/03/2023"},
+{id:230,name:"Interzone 954 Grey",brand:"International",volumeSolids:85,costPerLitre:31.64,packSize:20,lastUpdated:"10/03/2023"},
+{id:231,name:"Interzone 954 White",brand:"International",volumeSolids:85,costPerLitre:31.64,packSize:20,lastUpdated:"10/03/2023"},
+{id:232,name:"Interzone 954 Black",brand:"International",volumeSolids:85,costPerLitre:31.02,packSize:20,lastUpdated:"10/03/2023"},
+{id:233,name:"Interzone 954 MIO Metallic Grey",brand:"International",volumeSolids:85,costPerLitre:32.11,packSize:10,lastUpdated:"10/03/2023"},
+{id:234,name:"Interzone 954 Golden Yellow",brand:"International",volumeSolids:85,costPerLitre:34.57,packSize:20,lastUpdated:"10/03/2023"},
+{id:240,name:"Interthane 870 Base Light",brand:"International",volumeSolids:56,costPerLitre:38.97,packSize:5,lastUpdated:"10/03/2023"},
+{id:241,name:"Interthane 870 Base Ultra Deep",brand:"International",volumeSolids:56,costPerLitre:42.67,packSize:5,lastUpdated:"10/03/2023"},
+{id:242,name:"Interthane 870 Base Yellow",brand:"International",volumeSolids:56,costPerLitre:43.02,packSize:5,lastUpdated:"10/03/2023"},
+{id:243,name:"Interthane 870 White",brand:"International",volumeSolids:56,costPerLitre:38.97,packSize:5,lastUpdated:"10/03/2023"},
+{id:244,name:"Interthane 870 Base Metallic",brand:"International",volumeSolids:56,costPerLitre:65.08,packSize:5,lastUpdated:"10/03/2023"},
+{id:245,name:"Interthane 870 MIO RMS Bridge Grey",brand:"International",volumeSolids:56,costPerLitre:37.47,packSize:10,lastUpdated:"10/03/2023"},
+{id:250,name:"Interthane 990 Base Light",brand:"International",volumeSolids:57,costPerLitre:38.97,packSize:5,lastUpdated:"10/03/2023"},
+{id:251,name:"Interthane 990 Base Ultra Deep",brand:"International",volumeSolids:57,costPerLitre:42.67,packSize:5,lastUpdated:"10/03/2023"},
+{id:252,name:"Interthane 990 Base Ultra Light",brand:"International",volumeSolids:57,costPerLitre:38.97,packSize:5,lastUpdated:"10/03/2023"},
+{id:253,name:"Interthane 990 Base Yellow",brand:"International",volumeSolids:57,costPerLitre:43.04,packSize:5,lastUpdated:"10/03/2023"},
+{id:254,name:"Interthane 990 White",brand:"International",volumeSolids:57,costPerLitre:38.97,packSize:5,lastUpdated:"10/03/2023"},
+{id:255,name:"Interthane 990 High Opacity White",brand:"International",volumeSolids:57,costPerLitre:42.31,packSize:5,lastUpdated:"10/03/2023"},
+{id:256,name:"Interthane 990 Golden Yellow",brand:"International",volumeSolids:57,costPerLitre:43.04,packSize:5,lastUpdated:"10/03/2023"},
+{id:257,name:"Interthane 990 Black",brand:"International",volumeSolids:57,costPerLitre:38.97,packSize:5,lastUpdated:"10/03/2023"},
+{id:258,name:"Interthane 990 Base Metallic",brand:"International",volumeSolids:57,costPerLitre:65.08,packSize:5,lastUpdated:"10/03/2023"},
+{id:259,name:"Interthane 990 Base Orange",brand:"International",volumeSolids:57,costPerLitre:52.76,packSize:5,lastUpdated:"10/03/2023"},
+{id:270,name:"Interfine 979 Base Light",brand:"International",volumeSolids:76,costPerLitre:77.99,packSize:5,lastUpdated:"10/03/2023"},
+{id:271,name:"Interfine 979 Base Deep",brand:"International",volumeSolids:76,costPerLitre:77.99,packSize:5,lastUpdated:"10/03/2023"},
+{id:272,name:"Interfine 979 Base Yellow",brand:"International",volumeSolids:76,costPerLitre:105.50,packSize:20,lastUpdated:"10/03/2023"},
+{id:273,name:"Interfine 979 White",brand:"International",volumeSolids:76,costPerLitre:77.99,packSize:5,lastUpdated:"10/03/2023"},
+{id:274,name:"Interfine 979 Golden Yellow",brand:"International",volumeSolids:76,costPerLitre:108.76,packSize:5,lastUpdated:"10/03/2023"},
+{id:275,name:"Interfine 979 Base Red",brand:"International",volumeSolids:76,costPerLitre:92.31,packSize:5,lastUpdated:"10/03/2023"},
+{id:280,name:"Interline 850 White",brand:"International",volumeSolids:76,costPerLitre:29.72,packSize:20,lastUpdated:"10/03/2023"},
+{id:281,name:"Interline 850 Buff",brand:"International",volumeSolids:76,costPerLitre:29.72,packSize:20,lastUpdated:"10/03/2023"},
+{id:301,name:"SigmaCover 280 Yellow-Green",brand:"PPG",volumeSolids:57,costPerLitre:16.57,packSize:20,lastUpdated:"01/07/2025"},
+{id:310,name:"SigmaShield 880 Black/White/N35 Grey",brand:"PPG",volumeSolids:85,costPerLitre:24.59,packSize:20,lastUpdated:"01/07/2025"},
+{id:311,name:"SigmaShield 880 Pastel Tints/N33 MIO",brand:"PPG",volumeSolids:85,costPerLitre:27.79,packSize:20,lastUpdated:"01/07/2025"},
+{id:312,name:"SigmaShield 880 Strong Tints",brand:"PPG",volumeSolids:85,costPerLitre:31.38,packSize:20,lastUpdated:"01/07/2025"},
+{id:401,name:"Penguard Express Grey",brand:"Jotun",volumeSolids:74,costPerLitre:15.19,packSize:20,lastUpdated:""},
+{id:402,name:"Penguard Express MIO Grey",brand:"Jotun",volumeSolids:74,costPerLitre:14.78,packSize:20,lastUpdated:""},
+{id:403,name:"Penguard Express ZP Buff",brand:"Jotun",volumeSolids:74,costPerLitre:15.19,packSize:20,lastUpdated:""},
+{id:404,name:"Penguard Express ZP Grey",brand:"Jotun",volumeSolids:74,costPerLitre:15.19,packSize:20,lastUpdated:""},
+{id:405,name:"Penguard Express MIO S9935",brand:"Jotun",volumeSolids:74,costPerLitre:14.78,packSize:20,lastUpdated:""},
+{id:406,name:"Barrier 77",brand:"Jotun",volumeSolids:53,costPerLitre:22.55,packSize:7,lastUpdated:""},
+{id:410,name:"Hardtop AX White",brand:"Jotun",volumeSolids:63,costPerLitre:21.56,packSize:5,lastUpdated:""},
+{id:411,name:"Hardtop AX Golden Yellow",brand:"Jotun",volumeSolids:63,costPerLitre:23.91,packSize:5,lastUpdated:""},
+{id:412,name:"Hardtop AX Grp 1,2&3",brand:"Jotun",volumeSolids:63,costPerLitre:30.04,packSize:5,lastUpdated:""},
+{id:413,name:"Hardtop AX MIO Shades",brand:"Jotun",volumeSolids:63,costPerLitre:19.86,packSize:20,lastUpdated:""},
+{id:420,name:"Hardtop CA Grp 1,2&3",brand:"Jotun",volumeSolids:63,costPerLitre:39.55,packSize:5,lastUpdated:""},
+{id:425,name:"Hardtop Ultra Grp 1,2&3",brand:"Jotun",volumeSolids:52,costPerLitre:26.37,packSize:5,lastUpdated:""},
+{id:430,name:"Hardtop XP Grp 1,2&3",brand:"Jotun",volumeSolids:63,costPerLitre:29.19,packSize:5,lastUpdated:""},
+{id:431,name:"Hardtop XP Aluminium",brand:"Jotun",volumeSolids:63,costPerLitre:19.86,packSize:5,lastUpdated:""},
+{id:435,name:"Hardtop XPL Grp 1,2&3",brand:"Jotun",volumeSolids:58,costPerLitre:22.81,packSize:5,lastUpdated:""}
+];
+const DEFAULT_CUSTOM_SHAPES=[
+{id:1,name:"Hopper",inputs:[{key:"L",label:"Length (m)"},{key:"W",label:"Width (m)"},{key:"H",label:"Wall Height (m)"},{key:"S",label:"Slope Height (m)"}],formula:"(L*W)+(2*L*H)+(2*W*H)+(L*S)",notes:"Triangle floor treated as square, single sided"},
+{id:2,name:"Cylinder",inputs:[{key:"D",label:"Diameter (m)"},{key:"L",label:"Length (m)"},{key:"ends",label:"No. of Ends (0-2)"}],formula:"(3.14159*D*L)+(ends*3.14159*(D/2)*(D/2))",notes:"Shell + flat circular ends"}
+];
+
+const SPEC_COLORS={1:"#52a0c8",2:"#e8a020",3:"#5cb85c"};
+
+async function storageGet(key){try{const r=await window.storage.get(key);return r?JSON.parse(r.value):null;}catch(e){return null;}}
+async function storageSet(key,val){try{await window.storage.set(key,JSON.stringify(val));}catch(e){}}
+
+function calcM2(type,dims){
+const n=k=>parseFloat(dims[k])||0;
+switch(type){
+case"SHS":return 4*(n("size")/1000)*n("lm");
+case"RHS":return 2*((n("w")+n("h"))/1000)*n("lm");
+case"CHS":return Math.PI*(n("dia")/1000)*n("lm");
+case"UC":return(n("size")/1000)*6*n("lm");
+case"UB":return(UB_TABLE[dims.designation]||0)*n("lm");
+case"PFC":return((n("d")+4*n("bf"))/1000)*n("lm");
+case"PL":return 2*(n("w")/1000)*n("lm");
+case"FL":return 2*(n("w")/1000)*n("lm");
+case"ANGLE":return 2*((n("a")+n("b"))/1000)*n("lm");
+case"ROD":return Math.PI*(n("dia")/1000)*n("lm");
+case"TANK":{const a=n("l"),b=n("w"),c=n("h");return 2*(a*b)+2*(a*c)+2*(b*c);}
+case"FLAT":return n("area");
+case"CUSTOM_CIRC":return n("circ")*n("lm");
+default:return 0;
+}}
+
+function evalCustomFormula(formula,inputs){
+try{const vars=Object.entries(inputs).map(([k,v])=>"const "+k+"="+(parseFloat(v)||0)+";").join("");return new Function(vars+" return "+formula+";")();}catch(e){return 0;}}
+
+function calcLitres(areaSqM,dftMicrons,volumeSolids,wasteFactor){
+const wf=wasteFactor===undefined?15:wasteFactor;
+const theoretical=(areaSqM*dftMicrons)/(10*volumeSolids);
+return{theoretical,practical:theoretical*(1+wf/100)};}
+
+function newId(){return Date.now()+Math.random();}
+function formatDate(d){const dt=d||new Date();return dt.toLocaleDateString("en-AU",{day:"2-digit",month:"2-digit",year:"numeric"});}
+function yymmdd(){const d=new Date();return String(d.getFullYear()).slice(2)+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0");}
+function safeFileName(){return Array.from(arguments).filter(Boolean).join(" ").replace(/[^a-zA-Z0-9 _\-]/g,"").replace(/\s+/g," ").trim();}
+
+function mapSectionType(desc){
+const d=desc.toUpperCase().trim();
+if(d.startsWith("SHS"))return"SHS";if(d.startsWith("RHS"))return"RHS";
+if(d.startsWith("CHS")||d.includes("PIPE")||d.includes("NB"))return"CHS";
+if(d.startsWith("UC"))return"UC";if(d.startsWith("UB"))return"UB";
+if(d.startsWith("PFC")||d.startsWith("TFC")||d.includes("CHANNEL")||d.endsWith("PFC")||d.includes(" PFC"))return"PFC";
+if(d.startsWith("EA ")||d.startsWith("EA\t")||d.endsWith(" EA")||d.endsWith("EA")||d.match(/^\d+.*EA$/))return"ANGLE";
+if(d.startsWith("UA ")||d.startsWith("UA\t"))return"ANGLE";if(d.startsWith("ANGLE"))return"ANGLE";
+if(d.startsWith("FLAT")||d.startsWith("FL ")||d.startsWith("FL\t"))return"FL";
+if(d.startsWith("PL")||d.startsWith("PLATE"))return"PL";if(d.startsWith("ROD")||d.startsWith("RD"))return"ROD";
+return"CUSTOM_CIRC";}
+
+function parseSectionDims(type,desc){
+const nums=desc.match(/[\d.]+/g)||[];
+switch(type){
+case"SHS":return{size:nums[0]||""};case"RHS":return{w:nums[0]||"",h:nums[1]||""};
+case"CHS":return{dia:nums[0]||""};case"UC":return{size:nums[0]||""};
+case"PFC":return{d:nums[0]||"",bf:nums[1]||""};
+case"ANGLE":return{a:nums[0]||"",b:nums[1]||nums[0]||""};
+case"FL":case"PL":return{w:nums[0]||""};case"ROD":return{dia:nums[0]||""};
+default:return{};}}
+
+function memberM2(m){
+const u=m.type==="CUSTOM_SHAPE"?evalCustomFormula(m.customShape?m.customShape.formula:"",m.dims):calcM2(m.type,m.dims);
+return u*(parseFloat(m.qty)||1);}
+
+function getSpecBlast(quote,s){if(!quote.specBlast)return true;if(quote.specBlast[s]===undefined)return true;return quote.specBlast[s];}
+function getSpecName(quote,s){if(quote.specNames&&quote.specNames[s])return quote.specNames[s];return"Spec "+s;}
+
+const bg="#0e1a24",surface="#162535",bdr="rgba(82,160,200,0.18)",gold="#e8a020",blue="#52a0c8",green="#5cb85c",red="#d9534f",textCol="#dde6ee",muted="#6a8090";
+const inputStyle={background:"rgba(255,255,255,0.06)",border:"1px solid rgba(82,160,200,0.18)",borderRadius:5,padding:"0.45rem 0.65rem",color:textCol,fontSize:"0.88rem",outline:"none",width:"100%",boxSizing:"border-box"};
+const selectStyle={background:"#1a2a3a",border:"1px solid rgba(82,160,200,0.18)",borderRadius:5,padding:"0.45rem 0.65rem",color:textCol,fontSize:"0.88rem",outline:"none",width:"100%",boxSizing:"border-box"};
+const labelStyle={fontSize:"0.63rem",letterSpacing:"0.1em",textTransform:"uppercase",color:muted,display:"block",marginBottom:"0.28rem"};
+const btnPrimary={background:"linear-gradient(135deg,#1a5a8a,#2a80b8)",border:"none",color:"#fff",borderRadius:5,padding:"0.5rem 1.2rem",fontSize:"0.85rem",fontWeight:"bold",cursor:"pointer"};
+const btnGold={background:"linear-gradient(135deg,#a86010,#e8a020)",border:"none",color:"#111",borderRadius:5,padding:"0.5rem 1.2rem",fontSize:"0.85rem",fontWeight:"bold",cursor:"pointer"};
+const btnOutline={background:"transparent",border:"1px solid rgba(82,160,200,0.18)",color:blue,borderRadius:5,padding:"0.38rem 0.9rem",fontSize:"0.8rem",cursor:"pointer"};
+const btnDanger={background:"transparent",border:"none",color:muted,cursor:"pointer",fontSize:"1rem",lineHeight:1,padding:"0 4px"};
+const btnDupe={background:"transparent",border:"none",color:blue,cursor:"pointer",fontSize:"0.85rem",lineHeight:1,padding:"0 4px"};
+const btnGreen={background:"linear-gradient(135deg,#2e7a2e,#5cb85c)",border:"none",color:"#fff",borderRadius:5,padding:"0.5rem 1.2rem",fontSize:"0.85rem",fontWeight:"bold",cursor:"pointer"};
+const cardStyle={background:surface,border:"1px solid rgba(82,160,200,0.18)",borderRadius:10,padding:"1.25rem 1.5rem",marginBottom:"1rem"};
+const secTitle={fontSize:"0.68rem",letterSpacing:"0.15em",textTransform:"uppercase",color:blue,marginBottom:"0.75rem",display:"flex",alignItems:"center",gap:"0.5rem"};
+
+const MEMBER_TYPES=["SHS","RHS","CHS","UC","UB","PFC","ANGLE","PL","FL","ROD","TANK","FLAT","CUSTOM_CIRC"];
+
+function Stat(props){return h("div",null,h("div",{style:{fontSize:"0.6rem",color:muted,letterSpacing:"0.08em",textTransform:"uppercase"}},props.label),h("div",{style:{color:props.color,fontWeight:props.bold?"bold":"normal",fontSize:"0.88rem"}},props.value));}
+
+function SpecBadge(props){const col=SPEC_COLORS[props.spec]||muted;return h("div",{style:{fontSize:"0.65rem",fontWeight:"bold",color:col,border:"1px solid "+col,borderRadius:3,padding:"1px 6px",minWidth:18,textAlign:"center"}},props.spec);}
+
+function LabelInput(props){return h("div",{style:{flex:1,minWidth:props.minWidth||60}},h("label",{style:labelStyle},props.label),h("input",{style:inputStyle,placeholder:props.ph||"",value:props.value,onChange:props.onChange,type:"number",min:"0",step:"any"}));}
+
+function MemberRow(props){
+const row=props.row,type=row.type,dims=row.dims;
+const setDim=(k,v)=>props.onChange({...row,dims:{...dims,[k]:v}});
+const renderInputs=()=>{
+if(type==="SHS")return h(React.Fragment,null,h(LabelInput,{label:"Size mm",ph:"100",value:dims.size||"",onChange:e=>setDim("size",e.target.value)}),h(LabelInput,{label:"Lin. m",ph:"10",value:dims.lm||"",onChange:e=>setDim("lm",e.target.value)}));
+if(type==="RHS")return h(React.Fragment,null,h(LabelInput,{label:"W mm",ph:"150",value:dims.w||"",onChange:e=>setDim("w",e.target.value)}),h(LabelInput,{label:"H mm",ph:"100",value:dims.h||"",onChange:e=>setDim("h",e.target.value)}),h(LabelInput,{label:"Lin. m",ph:"10",value:dims.lm||"",onChange:e=>setDim("lm",e.target.value)}));
+if(type==="CHS")return h(React.Fragment,null,h(LabelInput,{label:"Dia mm",ph:"168",value:dims.dia||"",onChange:e=>setDim("dia",e.target.value)}),h(LabelInput,{label:"Lin. m",ph:"10",value:dims.lm||"",onChange:e=>setDim("lm",e.target.value)}));
+if(type==="UC")return h(React.Fragment,null,h(LabelInput,{label:"Size mm",ph:"200",value:dims.size||"",onChange:e=>setDim("size",e.target.value)}),h(LabelInput,{label:"Lin. m",ph:"10",value:dims.lm||"",onChange:e=>setDim("lm",e.target.value)}));
+if(type==="UB")return h(React.Fragment,null,h("div",{style:{flex:2,minWidth:110}},h("label",{style:labelStyle},"Designation"),h("select",{style:inputStyle,value:dims.designation||"",onChange:e=>setDim("designation",e.target.value)},h("option",{value:""},"Select UB"),Object.keys(UB_TABLE).map(k=>h("option",{key:k,value:k},k)))),h(LabelInput,{label:"Lin. m",ph:"10",value:dims.lm||"",onChange:e=>setDim("lm",e.target.value)}));
+if(type==="PFC")return h(React.Fragment,null,h(LabelInput,{label:"Depth mm",ph:"200",value:dims.d||"",onChange:e=>setDim("d",e.target.value)}),h(LabelInput,{label:"Flange mm",ph:"75",value:dims.bf||"",onChange:e=>setDim("bf",e.target.value)}),h(LabelInput,{label:"Lin. m",ph:"10",value:dims.lm||"",onChange:e=>setDim("lm",e.target.value)}));
+if(type==="ANGLE")return h(React.Fragment,null,h(LabelInput,{label:"Leg A mm",ph:"100",value:dims.a||"",onChange:e=>setDim("a",e.target.value)}),h(LabelInput,{label:"Leg B mm",ph:"75",value:dims.b||"",onChange:e=>setDim("b",e.target.value)}),h(LabelInput,{label:"Lin. m",ph:"10",value:dims.lm||"",onChange:e=>setDim("lm",e.target.value)}));
+if(type==="PL"||type==="FL")return h(React.Fragment,null,h(LabelInput,{label:"Width mm",ph:"200",value:dims.w||"",onChange:e=>setDim("w",e.target.value)}),h(LabelInput,{label:"Lin. m",ph:"10",value:dims.lm||"",onChange:e=>setDim("lm",e.target.value)}));
+if(type==="ROD")return h(React.Fragment,null,h(LabelInput,{label:"Dia mm",ph:"20",value:dims.dia||"",onChange:e=>setDim("dia",e.target.value)}),h(LabelInput,{label:"Lin. m",ph:"10",value:dims.lm||"",onChange:e=>setDim("lm",e.target.value)}));
+if(type==="TANK")return h(React.Fragment,null,h(LabelInput,{label:"L (m)",ph:"3",value:dims.l||"",onChange:e=>setDim("l",e.target.value)}),h(LabelInput,{label:"W (m)",ph:"2",value:dims.w||"",onChange:e=>setDim("w",e.target.value)}),h(LabelInput,{label:"H (m)",ph:"2",value:dims.h||"",onChange:e=>setDim("h",e.target.value)}));
+if(type==="FLAT")return h(LabelInput,{label:"Area m2",ph:"10",value:dims.area||"",onChange:e=>setDim("area",e.target.value)});
+if(type==="CUSTOM_CIRC")return h(React.Fragment,null,h(LabelInput,{label:"Circ m",ph:"0.8",value:dims.circ||"",onChange:e=>setDim("circ",e.target.value)}),h(LabelInput,{label:"Lin. m",ph:"10",value:dims.lm||"",onChange:e=>setDim("lm",e.target.value)}));
+if(type==="CUSTOM_SHAPE"){const cs=row.customShape;if(!cs)return null;return cs.inputs.map(inp=>h("div",{key:inp.key,style:{flex:1,minWidth:60}},h("label",{style:labelStyle},inp.label),h("input",{style:inputStyle,value:dims[inp.key]||"",onChange:e=>setDim(inp.key,e.target.value),type:"number",min:"0",step:"any"})));}
+return null;};
+const totalM2=memberM2(row);const specCol=SPEC_COLORS[parseInt(row.spec)||1];
+return h("div",{style:{display:"flex",gap:"0.4rem",alignItems:"flex-end",padding:"0.5rem 0.65rem",borderBottom:"1px solid rgba(255,255,255,0.04)"}},
+h("div",{style:{flex:1.4,minWidth:110}},h("label",{style:labelStyle},"Type"),h("select",{style:selectStyle,value:type==="CUSTOM_SHAPE"?(row.customShape?"CS_"+row.customShape.id:""):type,onChange:e=>{const t=e.target.value;if(t.startsWith("CS_")){const csId=+t.replace("CS_","");const cs=props.customShapes.find(s=>s.id===csId);props.onChange({...row,type:"CUSTOM_SHAPE",dims:{},customShape:cs});}else{props.onChange({...row,type:t,dims:{},customShape:null});}}},h("optgroup",{label:"Standard"},MEMBER_TYPES.map(t=>h("option",{key:t,value:t},t))),props.customShapes.length>0&&h("optgroup",{label:"Custom"},props.customShapes.map(cs=>h("option",{key:cs.id,value:"CS_"+cs.id},cs.name))))),
+type==="CUSTOM_SHAPE"&&props.customShapes.length>1&&h("div",{style:{flex:1.2,minWidth:100}},h("label",{style:labelStyle},"Shape"),h("select",{style:inputStyle,value:row.customShape?row.customShape.id:"",onChange:e=>{const cs=props.customShapes.find(s=>s.id===+e.target.value);props.onChange({...row,customShape:cs,dims:{}});}},props.customShapes.map(cs=>h("option",{key:cs.id,value:cs.id},cs.name)))),
+renderInputs(),
+h("div",{style:{flex:0.6,minWidth:52}},h("label",{style:labelStyle},"Qty"),h("input",{style:inputStyle,type:"number",min:"1",step:"1",value:row.qty||1,onChange:e=>props.onChange({...row,qty:e.target.value})})),
+h("div",{style:{flex:1.2,minWidth:85}},h("label",{style:labelStyle},"Description"),h("input",{style:inputStyle,placeholder:"optional",value:row.description||"",onChange:e=>props.onChange({...row,description:e.target.value})})),
+h("div",{style:{minWidth:42}},h("label",{style:labelStyle},"Spec"),h("select",{style:{...inputStyle,color:specCol,fontWeight:"bold"},value:row.spec||1,onChange:e=>props.onChange({...row,spec:parseInt(e.target.value)})},h("option",{value:1},"1"),h("option",{value:2},"2"),h("option",{value:3},"3"))),
+h("div",{style:{minWidth:60,textAlign:"right"}},h("label",{style:labelStyle},"m2"),h("div",{style:{color:totalM2>0?green:muted,fontWeight:"bold",fontSize:"0.9rem",padding:"0.45rem 0"}},totalM2>0?totalM2.toFixed(2):"\u2014")),
+h("div",{style:{display:"flex",flexDirection:"column",gap:2,paddingBottom:"0.3rem"}},h("button",{style:btnDupe,title:"Duplicate",onClick:props.onDuplicate},"\u29C9"),h("button",{style:btnDanger,title:"Delete",onClick:props.onDelete},"\u00D7")));}
+
+function CoatRow(props){
+const coat=props.coat;const product=props.products.find(p=>p.id===coat.productId);
+const dft=parseFloat(coat.dft)||0;const isHB=dft>=props.settings.highBuildThreshold;
+const appRate=isHB?props.settings.highBuildRate:props.settings.appRatePerCoat;
+let matCost=0,litres=0,kits=0;
+if(product&&props.totalM2>0&&dft>0){const res=calcLitres(props.totalM2,dft,product.volumeSolids,15);litres=res.practical;kits=Math.ceil(litres/product.packSize);matCost=litres*product.costPerLitre*(1+props.settings.materialMarkup/100);}
+const labourCost=props.totalM2*appRate;const total=matCost+labourCost;const specCol=SPEC_COLORS[coat.spec||1];
+return h("div",{style:{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(82,160,200,0.18)",borderLeft:"3px solid "+specCol,borderRadius:8,padding:"0.85rem 1rem",marginBottom:"0.6rem"}},
+h("div",{style:{display:"flex",gap:"0.65rem",alignItems:"flex-end",flexWrap:"wrap"}},
+h("div",{style:{fontSize:"0.68rem",color:blue,fontWeight:"bold",letterSpacing:"0.1em",minWidth:45}},"COAT "+(props.index+1)),
+h("div",{style:{flex:3,minWidth:150}},h("label",{style:labelStyle},"Product"),h("select",{style:selectStyle,value:coat.productId||"",onChange:e=>props.onChange({...coat,productId:+e.target.value})},h("option",{value:""},"Select product"),props.products.map(p=>h("option",{key:p.id,value:p.id},p.name+" ("+p.brand+")")))),
+h("div",{style:{flex:1,minWidth:70}},h("label",{style:labelStyle},"DFT (um)"),h("input",{style:inputStyle,type:"number",value:coat.dft||"",onChange:e=>props.onChange({...coat,dft:e.target.value}),placeholder:"75"})),
+h("div",{style:{flex:1,minWidth:80}},h("label",{style:labelStyle},"Colour"),h("input",{style:inputStyle,value:coat.colour||"",onChange:e=>props.onChange({...coat,colour:e.target.value}),placeholder:"White"})),
+h("div",{style:{minWidth:48}},h("label",{style:labelStyle},"Spec"),h("select",{style:{...inputStyle,color:specCol,fontWeight:"bold"},value:coat.spec||1,onChange:e=>props.onChange({...coat,spec:parseInt(e.target.value)})},h("option",{value:1},"1"),h("option",{value:2},"2"),h("option",{value:3},"3"))),
+isHB&&h("div",{style:{fontSize:"0.68rem",color:gold,border:"1px solid #e8a020",borderRadius:3,padding:"2px 6px"}},"HIGH BUILD"),
+h("div",{style:{display:"flex",gap:2,paddingBottom:"0.3rem"}},h("button",{style:btnDupe,title:"Duplicate",onClick:props.onDuplicate},"\u29C9"),h("button",{style:btnDanger,title:"Delete",onClick:props.onDelete},"\u00D7"))),
+product&&props.totalM2>0&&dft>0&&h("div",{style:{display:"flex",gap:"1.25rem",marginTop:"0.6rem",paddingTop:"0.6rem",borderTop:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}},
+h(Stat,{label:"Litres",value:litres.toFixed(1)+"L",color:blue}),
+h(Stat,{label:"Kits ("+product.packSize+"L)",value:kits,color:blue}),
+h(Stat,{label:"Material",value:"$"+matCost.toFixed(2),color:textCol}),
+h(Stat,{label:"Labour ($"+appRate+"/m2)",value:"$"+labourCost.toFixed(2),color:textCol}),
+h(Stat,{label:"Coat Total",value:"$"+total.toFixed(2),color:gold,bold:true})));}
+
+function PDFImportModal(props){
+const[status,setStatus]=useState("idle");const[parsedRows,setParsedRows]=useState([]);const[errorMsg,setErrorMsg]=useState("");const[fileName,setFileName]=useState("");const fileRef=useRef();
+const handleFile=async(e)=>{const file=e.target.files[0];if(!file)return;setFileName(file.name);setStatus("reading");
+try{const base64=await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=()=>rej(new Error("Read failed"));r.readAsDataURL(file);});
+setStatus("parsing");const isImage=file.type.startsWith("image/");const mediaType=isImage?file.type:"application/pdf";
+const prompt=`You are an expert structural steel fabrication estimator reading a drawing, BOM, or sketch. Your job is to extract every steel member you can identify so we can calculate surface area for blast & coat estimating.
+
+PRIORITY ORDER:
+1. FORMAL BOM / PARTS LIST / CUTTING LIST TABLE
+2. CUT LIST / MARK LIST
+3. DRAWING ANNOTATIONS
+4. GENERAL ARRANGEMENT
+
+For EACH member found, return a JSON object with: "qty": number, "description": string, "length_mm": number, "material": string, "confidence": "high"|"medium"|"low"
+
+Return ONLY a valid JSON array. If no members found return: []`;
+const response=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:2000,messages:[{role:"user",content:[{type:isImage?"image":"document",source:{type:"base64",media_type:mediaType,data:base64}},{type:"text",text:prompt}]}]})});
+const data=await response.json();if(data.error)throw new Error(data.error.message);
+const text=data.content.map(i=>i.text||"").join("").trim();const rows=JSON.parse(text.replace(/```json|```/g,"").trim());
+if(!Array.isArray(rows)||rows.length===0){setErrorMsg("No BOM table found.");setStatus("error");return;}
+const mapped=rows.map(r=>{const type=mapSectionType(r.description);const dims=parseSectionDims(type,r.description);const lm_total=((r.length_mm||0)/1000)*(r.qty||1);if(["SHS","RHS","CHS","UC","ANGLE","FL","PL","ROD"].indexOf(type)>=0)dims.lm=lm_total.toFixed(3);const matStr=r.material?" ("+r.material+")":"";return{id:newId(),type,dims,qty:1,spec:1,description:r.description+matStr,_raw:r,_accepted:true};});
+setParsedRows(mapped);setStatus("review");}catch(err){setErrorMsg("Error: "+err.message);setStatus("error");}};
+const toggleRow=id=>setParsedRows(rows=>rows.map(r=>r.id===id?{...r,_accepted:!r._accepted}:r));
+const accepted=parsedRows.filter(r=>r._accepted);
+const totalM2=accepted.reduce((sum,r)=>{const m2=calcM2(r.type,r.dims)*(parseFloat(r.qty)||1);return sum+(isNaN(m2)?0:m2);},0);
+return h("div",{style:{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:300,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}},
+h("div",{style:{background:bg,border:"1px solid rgba(82,160,200,0.18)",borderRadius:12,padding:"1.5rem",width:"min(820px,96vw)",maxHeight:"90vh",overflowY:"auto"}},
+h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.25rem"}},h("div",{style:{color:blue,fontWeight:"bold",letterSpacing:"0.1em",fontSize:"0.9rem"}},"IMPORT FROM PDF / IMAGE"),h("button",{style:btnDanger,onClick:props.onClose},"x")),
+status==="idle"&&h("div",null,h("p",{style:{color:muted,fontSize:"0.85rem",lineHeight:1.6,marginBottom:"1rem"}},"Upload a fabrication drawing, BOM, cut list, or sketch. Claude will extract steel members."),h("div",{style:{border:"2px dashed rgba(82,160,200,0.18)",borderRadius:8,padding:"2.5rem",textAlign:"center",cursor:"pointer",background:"rgba(255,255,255,0.02)"},onClick:()=>fileRef.current.click()},h("div",{style:{fontSize:"2.5rem",marginBottom:"0.5rem"}},"\uD83D\uDCC2"),h("div",{style:{color:textCol,marginBottom:"0.25rem"}},"Click to upload PDF or image"),h("div",{style:{color:muted,fontSize:"0.78rem"}},"Supports PDF, PNG, JPG")),h("input",{ref:fileRef,type:"file",accept:".pdf,.png,.jpg,.jpeg",style:{display:"none"},onChange:handleFile})),
+(status==="reading"||status==="parsing")&&h("div",{style:{textAlign:"center",padding:"3rem"}},h("div",{style:{fontSize:"2rem",marginBottom:"1rem"}},status==="reading"?"\uD83D\uDCD6":"\uD83E\uDD16"),h("div",{style:{color:textCol,fontSize:"1rem",marginBottom:"0.5rem"}},status==="reading"?"Reading file...":"Claude is reading the BOM..."),h("div",{style:{color:muted,fontSize:"0.82rem"}},"This may take 10-20 seconds")),
+status==="error"&&h("div",{style:{textAlign:"center",padding:"2rem"}},h("div",{style:{fontSize:"2rem",marginBottom:"0.75rem"}},"!"),h("div",{style:{color:red,marginBottom:"1rem"}},errorMsg),h("button",{style:btnOutline,onClick:()=>setStatus("idle")},"Try Again")),
+status==="review"&&h("div",null,h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem"}},h("div",{style:{color:textCol,fontSize:"0.85rem"}},parsedRows.length+" items found in "+fileName),h("div",{style:{color:green,fontWeight:"bold"}},"~"+totalM2.toFixed(1)+" m2")),
+h("div",{style:{border:"1px solid rgba(82,160,200,0.18)",borderRadius:8,overflow:"hidden",marginBottom:"1rem"}},
+h("div",{style:{display:"grid",gridTemplateColumns:"2rem 2fr 1fr 1fr 1fr 1fr 0.6fr",gap:"0.5rem",padding:"0.5rem 0.75rem",background:"rgba(82,160,200,0.1)",borderBottom:"1px solid rgba(82,160,200,0.18)"}},["","Description","Type","Dims","lm","m2","Conf."].map((hd,i)=>h("div",{key:i,style:{fontSize:"0.62rem",fontWeight:"bold",letterSpacing:"0.1em",textTransform:"uppercase",color:blue}},hd))),
+parsedRows.map((row,i)=>{const m2=calcM2(row.type,row.dims);const dimStr=Object.entries(row.dims).filter(e=>e[0]!=="lm").map(e=>e[0]+":"+e[1]).join(" ");const conf=row._raw.confidence||"high";const confCol=conf==="high"?green:conf==="medium"?gold:red;return h("div",{key:row.id,style:{display:"grid",gridTemplateColumns:"2rem 2fr 1fr 1fr 1fr 1fr 0.6fr",gap:"0.5rem",padding:"0.45rem 0.75rem",borderBottom:i<parsedRows.length-1?"1px solid rgba(255,255,255,0.04)":"none",opacity:row._accepted?1:0.4}},h("input",{type:"checkbox",checked:row._accepted,onChange:()=>toggleRow(row.id),style:{width:15,height:15,cursor:"pointer",marginTop:2}}),h("div",{style:{fontSize:"0.8rem",color:textCol,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}},row._raw.description),h("div",{style:{fontSize:"0.8rem",color:blue}},row.type),h("div",{style:{fontSize:"0.75rem",color:muted,fontFamily:"monospace"}},dimStr),h("div",{style:{fontSize:"0.75rem",color:muted}},row.dims.lm||"\u2014"),h("div",{style:{fontSize:"0.82rem",color:m2>0?green:red,fontWeight:"bold"}},m2>0?m2.toFixed(2):"!"),h("div",{style:{fontSize:"0.68rem",color:confCol,fontWeight:"bold",textTransform:"uppercase"}},conf));})),
+h("div",{style:{background:"rgba(255,165,0,0.08)",border:"1px solid rgba(255,165,0,0.2)",borderRadius:6,padding:"0.65rem 0.9rem",marginBottom:"1rem",fontSize:"0.78rem",color:"#c8a060"}},"Always verify imported rows."),
+h("div",{style:{display:"flex",gap:"0.75rem"}},h("button",{style:btnGreen,onClick:()=>props.onImport(accepted.map(r=>{const x={...r};delete x._raw;delete x._accepted;return x;}))},"Import "+accepted.length+" rows"),h("button",{style:btnOutline,onClick:()=>setStatus("idle")},"Upload Different File"),h("button",{style:btnDanger,onClick:props.onClose},"Cancel")))));}
+
+function SettingsPanel(props){
+const[s,setS]=useState(props.settings);const[prods,setProds]=useState(props.products);const[shapes,setShapes]=useState(props.customShapes);
+const[newP,setNewP]=useState({name:"",brand:"",volumeSolids:"",costPerLitre:"",packSize:""});
+const[newShape,setNewShape]=useState({id:newId(),name:"",inputs:[{key:"A",label:"Dim A (m)"}],formula:"A",notes:""});
+const[addingShape,setAddingShape]=useState(false);const[bulkBrand,setBulkBrand]=useState("");const[bulkPct,setBulkPct]=useState("");
+const brands=[...new Set(prods.map(p=>p.brand))];const today=formatDate();
+const applyBulkUpdate=()=>{if(!bulkBrand||!bulkPct)return;const pct=parseFloat(bulkPct);if(isNaN(pct))return;setProds(prods.map(p=>{if(p.brand!==bulkBrand)return p;return{...p,costPerLitre:Math.round(p.costPerLitre*(1+pct/100)*100)/100,lastUpdated:today};}));setBulkPct("");};
+const saveNewProd=()=>{if(!newP.name||!newP.volumeSolids||!newP.costPerLitre)return;setProds([...prods,{...newP,id:newId(),volumeSolids:+newP.volumeSolids,costPerLitre:+newP.costPerLitre,packSize:+newP.packSize||20,lastUpdated:""}]);setNewP({name:"",brand:"",volumeSolids:"",costPerLitre:"",packSize:""});};
+return h("div",{style:{position:"fixed",inset:0,background:"rgba(0,0,0,0.8)",zIndex:100,display:"flex",alignItems:"center",justifyContent:"center",padding:"1rem"}},
+h("div",{style:{background:bg,border:"1px solid rgba(82,160,200,0.18)",borderRadius:12,padding:"1.5rem",width:"min(800px,95vw)",maxHeight:"90vh",overflowY:"auto"}},
+h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"1.25rem"}},h("div",{style:{color:blue,fontWeight:"bold",letterSpacing:"0.1em",fontSize:"0.9rem"}},"SETTINGS AND PRODUCT LIBRARY"),h("button",{style:btnDanger,onClick:props.onClose},"x")),
+h("div",{style:cardStyle},h("div",{style:secTitle},"Base Rates"),
+h("div",{style:{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(155px,1fr))",gap:"0.7rem"}},
+[["companyName","Company Name","text"],["blastRate","Blast Rate $/m2","number"],["appRatePerCoat","App Rate/Coat $/m2","number"],["highBuildRate","High-Build $/m2","number"],["highBuildThreshold","HB Threshold um","number"],["materialMarkup","Markup %","number"]].map(item=>h("div",{key:item[0]},h("label",{style:labelStyle},item[1]),h("input",{style:inputStyle,type:item[2],value:s[item[0]],onChange:e=>setS({...s,[item[0]]:item[2]==="number"?+e.target.value:e.target.value})})))),
+h("button",{style:{...btnPrimary,marginTop:"0.75rem"},onClick:()=>props.onSaveSettings(s)},"Save Rates")),
+h("div",{style:cardStyle},h("div",{style:secTitle},"Supplier Bulk Price Update"),
+h("div",{style:{display:"flex",gap:"0.65rem",alignItems:"flex-end",flexWrap:"wrap",marginBottom:"0.75rem"}},
+h("div",{style:{flex:2,minWidth:140}},h("label",{style:labelStyle},"Supplier / Brand"),h("select",{style:inputStyle,value:bulkBrand,onChange:e=>setBulkBrand(e.target.value)},h("option",{value:""},"Select brand"),brands.map(b=>h("option",{key:b,value:b},b)))),
+h("div",{style:{flex:1,minWidth:100}},h("label",{style:labelStyle},"Price Change %"),h("input",{style:inputStyle,type:"number",step:"0.1",placeholder:"e.g. 4.5",value:bulkPct,onChange:e=>setBulkPct(e.target.value)})),
+h("button",{style:btnGold,onClick:applyBulkUpdate},"Apply")),
+bulkBrand&&h("div",{style:{fontSize:"0.75rem",color:muted,lineHeight:1.8}},prods.filter(p=>p.brand===bulkBrand).map(p=>h("span",{key:p.id,style:{marginRight:"1rem"}},p.name+": ",h("span",{style:{color:textCol}},"$"+p.costPerLitre.toFixed(2)+"/L"),p.lastUpdated&&h("span",{style:{color:muted,fontSize:"0.68rem"}}," (updated "+p.lastUpdated+")"))))),
+h("div",{style:cardStyle},h("div",{style:secTitle},"Product Library"),
+brands.map(brand=>h("div",{key:brand,style:{marginBottom:"1rem"}},h("div",{style:{fontSize:"0.65rem",letterSpacing:"0.12em",textTransform:"uppercase",color:gold,marginBottom:"0.4rem",paddingBottom:"0.25rem",borderBottom:"1px solid rgba(255,255,255,0.06)"}},brand),
+prods.filter(p=>p.brand===brand).map(p=>h("div",{key:p.id,style:{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr 0.4fr",gap:"0.5rem",alignItems:"center",marginBottom:"0.35rem"}},
+h("div",{style:{color:textCol,fontSize:"0.82rem"}},p.name),
+h("div",{style:{color:muted,fontSize:"0.78rem"}},p.volumeSolids+"% VS"),
+h("input",{style:{...inputStyle,padding:"0.3rem 0.5rem"},type:"number",step:"0.01",value:p.costPerLitre,onChange:e=>setProds(prods.map(x=>x.id===p.id?{...x,costPerLitre:parseFloat(e.target.value)||x.costPerLitre}:x))}),
+h("div",{style:{color:muted,fontSize:"0.78rem"}},p.packSize+"L pack"),
+h("div",{style:{color:muted,fontSize:"0.68rem"}},p.lastUpdated||"\u2014"),
+h("button",{style:btnDanger,onClick:()=>setProds(prods.filter(x=>x.id!==p.id))},"x"))))),
+h("div",{style:{borderTop:"1px solid rgba(82,160,200,0.18)",paddingTop:"0.75rem",marginTop:"0.5rem"}},
+h("div",{style:{fontSize:"0.65rem",color:muted,marginBottom:"0.5rem",letterSpacing:"0.08em",textTransform:"uppercase"}},"Add New Product"),
+h("div",{style:{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 1fr 1fr auto",gap:"0.5rem",alignItems:"end"}},
+[["name","Product","text"],["brand","Brand","text"],["volumeSolids","VS %","number"],["costPerLitre","$/L","number"],["packSize","Pack L","number"]].map(item=>h("div",{key:item[0]},h("label",{style:labelStyle},item[1]),h("input",{style:inputStyle,type:item[2],value:newP[item[0]],onChange:e=>setNewP({...newP,[item[0]]:e.target.value})}))),
+h("button",{style:{...btnGold,alignSelf:"flex-end"},onClick:saveNewProd},"Add"))),
+h("button",{style:{...btnPrimary,marginTop:"0.75rem"},onClick:()=>props.onSaveProducts(prods)},"Save Products")),
+h("div",{style:cardStyle},
+h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem"}},h("div",{style:secTitle},"Custom Shape Library"),h("button",{style:btnOutline,onClick:()=>setAddingShape(true)},"+ New Shape")),
+addingShape&&h("div",{style:{background:"rgba(82,160,200,0.05)",border:"1px solid rgba(82,160,200,0.18)",borderRadius:8,padding:"1rem",marginBottom:"1rem"}},
+h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.65rem",marginBottom:"0.65rem"}},
+h("div",null,h("label",{style:labelStyle},"Shape Name"),h("input",{style:inputStyle,placeholder:"e.g. Cone",value:newShape.name,onChange:e=>setNewShape({...newShape,name:e.target.value})})),
+h("div",null,h("label",{style:labelStyle},"Formula"),h("input",{style:inputStyle,placeholder:"e.g. 3.14159*D*L",value:newShape.formula,onChange:e=>setNewShape({...newShape,formula:e.target.value})}))),
+h("div",{style:{marginBottom:"0.65rem"}},
+h("div",{style:{display:"flex",justifyContent:"space-between",marginBottom:"0.4rem"}},h("label",{style:labelStyle},"Inputs"),h("button",{style:btnOutline,onClick:()=>setNewShape({...newShape,inputs:[...newShape.inputs,{key:"D"+(newShape.inputs.length+1),label:""}]})},"+ Input")),
+newShape.inputs.map((inp,i)=>h("div",{key:i,style:{display:"grid",gridTemplateColumns:"1fr 2fr",gap:"0.5rem",marginBottom:"0.3rem"}},h("input",{style:inputStyle,placeholder:"Key e.g. L",value:inp.key,onChange:e=>{const ins=[...newShape.inputs];ins[i]={...ins[i],key:e.target.value};setNewShape({...newShape,inputs:ins});}}),h("input",{style:inputStyle,placeholder:"Label e.g. Length (m)",value:inp.label,onChange:e=>{const ins=[...newShape.inputs];ins[i]={...ins[i],label:e.target.value};setNewShape({...newShape,inputs:ins});}})))),
+h("div",{style:{marginBottom:"0.65rem"}},h("label",{style:labelStyle},"Notes"),h("input",{style:inputStyle,placeholder:"Brief description",value:newShape.notes,onChange:e=>setNewShape({...newShape,notes:e.target.value})})),
+h("div",{style:{display:"flex",gap:"0.5rem"}},h("button",{style:btnPrimary,onClick:()=>{if(newShape.name&&newShape.formula){setShapes([...shapes,newShape]);setAddingShape(false);}}},"Save Shape"),h("button",{style:btnOutline,onClick:()=>setAddingShape(false)},"Cancel"))),
+shapes.map(cs=>h("div",{key:cs.id,style:{background:"rgba(255,255,255,0.02)",border:"1px solid rgba(82,160,200,0.18)",borderRadius:6,padding:"0.6rem 0.85rem",marginBottom:"0.4rem",display:"flex",justifyContent:"space-between",alignItems:"flex-start"}},h("div",null,h("div",{style:{color:textCol,fontWeight:"bold",fontSize:"0.83rem"}},cs.name),h("div",{style:{color:muted,fontSize:"0.73rem",marginTop:2}},"Formula: ",h("span",{style:{color:blue}},cs.formula)),cs.notes&&h("div",{style:{color:muted,fontSize:"0.7rem",marginTop:1}},cs.notes)),h("button",{style:btnDanger,onClick:()=>setShapes(shapes.filter(s=>s.id!==cs.id))},"x"))),
+h("button",{style:{...btnPrimary,marginTop:"0.75rem"},onClick:()=>props.onSaveShapes(shapes)},"Save Shapes"))));}
+
+function ReportView(props){
+const[copied,setCopied]=useState(false);const quote=props.quote,settings=props.settings,products=props.products,fileName=props.fileName;
+const usedSpecs=[1,2,3].filter(s=>quote.members.some(m=>(m.spec||1)===s)||quote.coats.some(c=>(c.spec||1)===s));
+const specM2=s=>quote.members.filter(m=>(m.spec||1)===s).reduce((sum,m)=>sum+memberM2(m),0);
+let grandTotal=0;
+const specSections=usedSpecs.map(s=>{const m2=specM2(s);const blastOn=getSpecBlast(quote,s);const blastCost=blastOn?m2*settings.blastRate:0;
+const coats=quote.coats.filter(c=>(c.spec||1)===s);
+const coatDetails=coats.map(coat=>{const product=products.find(p=>p.id===coat.productId);const dft=parseFloat(coat.dft)||0;const isHB=dft>=settings.highBuildThreshold;const appRate=isHB?settings.highBuildRate:settings.appRatePerCoat;let matCost=0,litres=0,kits=0;if(product&&m2>0&&dft>0){const res=calcLitres(m2,dft,product.volumeSolids,15);litres=res.practical;kits=Math.ceil(litres/product.packSize);matCost=litres*product.costPerLitre*(1+settings.materialMarkup/100);}const labourCost=m2*appRate;const total=matCost+labourCost;return{coat,product,litres,kits,matCost,labourCost,total,isHB,appRate,dft};});
+const subtotal=blastCost+coatDetails.reduce((sum,cd)=>sum+cd.total,0);grandTotal+=subtotal;return{s,m2,blastCost,coatDetails,subtotal,blastOn};});
+if(quote.loading!==0)grandTotal*=(1+quote.loading/100);
+const totalM2=usedSpecs.reduce((sum,s)=>sum+specM2(s),0);
+const specTextBlocks=usedSpecs.map(s=>{const nm=getSpecName(quote,s);const m2=specM2(s);const lines=["--- "+nm.toUpperCase()+" ("+m2.toFixed(1)+" m2) ---"];if(getSpecBlast(quote,s))lines.push("Abrasive Blast SA2.5");quote.coats.filter(c=>(c.spec||1)===s).forEach((c,i)=>{const p=products.find(x=>x.id===c.productId);if(p)lines.push("Coat "+(i+1)+": "+p.name+" @ "+c.dft+"um"+(c.colour?" ("+c.colour+")":""));});return lines.join("\n");});
+const specLines=["COATING SPECIFICATION \u2014 "+(quote.projectName||"\u2014")+" ("+(quote.clientName||"\u2014")+")","Date: "+quote.date+" | Job: "+(quote.jobNumber||"\u2014")+" | Total Area: "+totalM2.toFixed(1)+" m2",""].concat(specTextBlocks).concat(["","TOTAL (ex GST): $"+grandTotal.toFixed(2)]).join("\n");
+const copySpec=()=>{navigator.clipboard.writeText(specLines).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2500);});};
+const handlePrintPDF=()=>{const content=document.querySelector(".report-printable");if(!content)return;const clone=content.cloneNode(true);clone.querySelectorAll(".no-print").forEach(el=>el.remove());const printHTML='<!DOCTYPE html><html><head><title>'+fileName+'</title><style>body{font-family:Georgia,serif;margin:2rem;color:#111;font-size:13px;}table{border-collapse:collapse;width:100%;}td,th{padding:4px 6px;border-bottom:1px solid #eee;}pre{white-space:pre-wrap;font-size:11px;}@media print{body{margin:0.5rem;}@page{margin:1cm;}}</style></head><body>'+clone.innerHTML+'<script>window.onload=function(){setTimeout(function(){window.print()},500)}<\/script></body></html>';const blob=new Blob([printHTML],{type:"text/html"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=fileName+".html";document.body.appendChild(a);a.click();setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},200);};
+return h("div",{style:{position:"fixed",inset:0,background:"rgba(0,0,0,0.88)",zIndex:200,display:"flex",alignItems:"flex-start",justifyContent:"center",overflowY:"auto",padding:"2rem 1rem"}},
+h("div",{className:"report-printable",style:{background:"#fff",color:"#111",borderRadius:10,width:"min(860px,95vw)",padding:"2rem 2.5rem",fontFamily:"Georgia,serif"}},
+h("div",{style:{background:"#f0f7ff",border:"2px solid #1a6aa8",borderRadius:8,padding:"1rem 1.25rem",marginBottom:"1.5rem"},className:"no-print"},
+h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.6rem"}},h("div",{style:{fontWeight:"bold",fontSize:"0.75rem",letterSpacing:"0.12em",textTransform:"uppercase",color:"#1a6aa8"}},"Copy-Paste Spec"),h("button",{onClick:copySpec,style:{background:copied?"#2e7a2e":"#1a6aa8",border:"none",color:"#fff",borderRadius:4,padding:"0.35rem 0.85rem",fontSize:"0.8rem",cursor:"pointer",fontWeight:"bold"}},copied?"Copied!":"Copy to Clipboard")),
+h("pre",{style:{margin:0,fontFamily:"monospace",fontSize:"0.82rem",color:"#1a3a5a",lineHeight:1.7,whiteSpace:"pre-wrap"}},specLines)),
+h("div",{style:{display:"flex",justifyContent:"space-between",borderBottom:"2px solid #222",paddingBottom:"1rem",marginBottom:"1.5rem"}},
+h("div",null,h("div",{style:{fontSize:"1.4rem",fontWeight:"bold"}},settings.companyName),h("div",{style:{fontSize:"0.75rem",color:"#666",textTransform:"uppercase",letterSpacing:"0.1em"}},"Coating and Blast Quotation \u2014 Internal")),
+h("div",{style:{textAlign:"right",fontSize:"0.83rem",color:"#444"}},h("div",null,"Date: "+quote.date),h("div",null,"Job: "+(quote.jobNumber||"\u2014")))),
+h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"1rem",marginBottom:"1.5rem",fontSize:"0.88rem"}},
+h("div",null,"Client: "+(quote.clientName||"\u2014")),h("div",null,"Project: "+(quote.projectName||"\u2014")),
+quote.notes&&h("div",{style:{gridColumn:"1/-1"}},"Notes: "+quote.notes)),
+specSections.map(sec=>{const nm=getSpecName(quote,sec.s);const specCol=sec.s===1?"#1a6aa8":sec.s===2?"#a86010":"#2e7a2e";const members=quote.members.filter(m=>(m.spec||1)===sec.s);
+return h("div",{key:sec.s,style:{marginBottom:"2rem",borderLeft:"4px solid "+specCol,paddingLeft:"1rem"}},
+h("div",{style:{fontWeight:"bold",fontSize:"1rem",color:specCol,marginBottom:"0.75rem",textTransform:"uppercase",letterSpacing:"0.06em"}},nm+" \u2014 "+sec.m2.toFixed(2)+" m2"),
+h("div",{style:{marginBottom:"1rem"}},
+h("div",{style:{fontWeight:"bold",fontSize:"0.7rem",letterSpacing:"0.1em",textTransform:"uppercase",borderBottom:"1px solid #ddd",paddingBottom:"0.3rem",marginBottom:"0.4rem",color:"#555"}},"Surface Area"),
+h("table",{style:{width:"100%",fontSize:"0.78rem",borderCollapse:"collapse"}},
+h("thead",null,h("tr",{style:{background:"#f5f5f5"}},["Type","Description","Dims","Qty","m2"].map(hd=>h("th",{key:hd,style:{textAlign:"left",padding:"0.25rem 0.4rem",fontWeight:"bold",color:"#444"}},hd)))),
+h("tbody",null,members.map((m,i)=>{const tot=memberM2(m);const dimStr=Object.entries(m.dims).map(e=>e[0]+":"+e[1]).join(" / ");return h("tr",{key:i,style:{borderBottom:"1px solid #eee"}},h("td",{style:{padding:"0.25rem 0.4rem"}},m.type==="CUSTOM_SHAPE"?(m.customShape?m.customShape.name:"Custom"):m.type),h("td",{style:{padding:"0.25rem 0.4rem",color:"#555"}},m.description||"\u2014"),h("td",{style:{padding:"0.25rem 0.4rem",color:"#555",fontFamily:"monospace",fontSize:"0.72rem"}},dimStr),h("td",{style:{padding:"0.25rem 0.4rem",textAlign:"center"}},m.qty||1),h("td",{style:{padding:"0.25rem 0.4rem",fontWeight:"bold"}},tot.toFixed(2)));}),
+h("tr",{style:{background:"#f0f4f8",fontWeight:"bold"}},h("td",{colSpan:4,style:{padding:"0.3rem 0.4rem"}},"Subtotal"),h("td",{style:{padding:"0.3rem 0.4rem"}},sec.m2.toFixed(2)+" m2"))))),
+h("div",{style:{marginBottom:"0.5rem"}},
+h("div",{style:{fontWeight:"bold",fontSize:"0.7rem",letterSpacing:"0.1em",textTransform:"uppercase",borderBottom:"1px solid #ddd",paddingBottom:"0.3rem",marginBottom:"0.4rem",color:"#555"}},"Scope and Pricing"),
+sec.blastOn&&h("div",{style:{display:"flex",justifyContent:"space-between",padding:"0.35rem 0",borderBottom:"1px solid #eee",fontSize:"0.84rem"}},h("span",null,"Sandblasting \u2014 "+sec.m2.toFixed(1)+" m2 @ $"+settings.blastRate+"/m2"),h("strong",null,"$"+sec.blastCost.toFixed(2))),
+sec.coatDetails.map((cd,i)=>h("div",{key:i,style:{padding:"0.45rem 0",borderBottom:"1px solid #eee",fontSize:"0.81rem"}},h("div",{style:{fontWeight:"bold",marginBottom:2}},"Coat "+(i+1)+": "+(cd.product?cd.product.name:"\u2014")+" "+cd.dft+"um"+(cd.coat.colour?" ("+cd.coat.colour+")":"")+(cd.isHB?" [High Build]":"")),h("div",{style:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",color:"#555",fontSize:"0.73rem",gap:"0.2rem"}},h("span",null,"Material: "+cd.litres.toFixed(1)+"L / "+cd.kits+" kits \u2014 $"+cd.matCost.toFixed(2)),h("span",null,"Labour: "+sec.m2.toFixed(1)+"m2 @ $"+cd.appRate+"/m2 \u2014 $"+cd.labourCost.toFixed(2)),h("span",{style:{textAlign:"right",fontWeight:"bold",color:"#111"}},"$"+cd.total.toFixed(2)))))),
+h("div",{style:{display:"flex",justifyContent:"space-between",background:"#e8f0f8",padding:"0.5rem 0.75rem",borderRadius:4,fontSize:"0.9rem",fontWeight:"bold",color:specCol}},h("span",null,nm+" Subtotal"),h("span",null,"$"+sec.subtotal.toFixed(2))));}),
+quote.loading!==0&&h("div",{style:{display:"flex",justifyContent:"space-between",fontSize:"0.86rem",color:"#555",marginBottom:"0.25rem"}},h("span",null,"Loading ("+(quote.loading>0?"+":"")+quote.loading+"%)"),h("span",null,"$"+(grandTotal*(quote.loading/100)/(1+quote.loading/100)).toFixed(2))),
+h("div",{style:{display:"flex",justifyContent:"space-between",background:"#111",color:"#fff",padding:"0.85rem 1rem",borderRadius:6,fontSize:"1.15rem",fontWeight:"bold"}},h("span",null,"GRAND TOTAL (ex GST)"),h("span",null,"$"+grandTotal.toFixed(2))),
+h("div",{style:{marginTop:"2rem",fontSize:"0.68rem",color:"#999",borderTop:"1px solid #eee",paddingTop:"0.75rem"}},"Rates current as of "+quote.date+". Material costs include "+settings.materialMarkup+"% markup. Quote valid 30 days. All prices ex GST."),
+h("div",{style:{display:"flex",gap:"0.75rem",marginTop:"1.5rem"},className:"no-print"},
+h("div",{style:{flex:1,background:"#f8f9fa",border:"1px solid #ddd",borderRadius:8,padding:"0.85rem 1rem"}},
+h("div",{style:{fontSize:"0.65rem",color:"#888",letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:"0.4rem"}},"Save filename"),
+h("div",{style:{fontFamily:"monospace",fontSize:"0.85rem",color:"#333",marginBottom:"0.6rem"}},fileName+".pdf"),
+h("div",{style:{fontSize:"0.72rem",color:"#888",lineHeight:1.5}},"Downloads an HTML file. Open it in your browser and it will auto-trigger Print / Save as PDF."))),
+h("div",{style:{display:"flex",gap:"0.75rem",marginTop:"0.75rem"},className:"no-print"},
+h("button",{style:{...btnPrimary,background:"#1a6aa8"},onClick:handlePrintPDF},"Save as PDF"),
+h("button",{style:{...btnOutline,color:"#555",border:"1px solid #ccc"},onClick:props.onClose},"Close"))));}
+
+const blankQuote=()=>({id:newId(),clientName:"",projectName:"",jobNumber:"",date:formatDate(),notes:"",members:[{id:newId(),type:"SHS",dims:{},description:"",qty:1,spec:1}],specNames:{1:"Spec 1",2:"Spec 2",3:"Spec 3"},specBlast:{1:true,2:true,3:true},coats:[{id:newId(),productId:null,dft:"",colour:"",spec:1}],loading:0});
+
+function App(){
+const[settings,setSettings]=useState(DEFAULT_SETTINGS);const[products,setProducts]=useState(DEFAULT_PRODUCTS);const[customShapes,setCustomShapes]=useState(DEFAULT_CUSTOM_SHAPES);
+const[quote,setQuote]=useState(blankQuote());const[showSettings,setShowSettings]=useState(false);const[showReport,setShowReport]=useState(false);const[showPDFImport,setShowPDFImport]=useState(false);
+const[step,setStep]=useState(1);const[loaded,setLoaded]=useState(false);const[savedMsg,setSavedMsg]=useState("");
+useEffect(()=>{(async()=>{const ps=await storageGet("isv-products");const cs=await storageGet("isv-shapes");const ss=await storageGet("isv-settings");if(ps)setProducts(ps);if(cs)setCustomShapes(cs);if(ss)setSettings(ss);setLoaded(true);})();},[]);
+const showSaved=msg=>{setSavedMsg(msg);setTimeout(()=>setSavedMsg(""),2200);};
+const persistProducts=async p=>{setProducts(p);await storageSet("isv-products",p);showSaved("Products saved");};
+const persistShapes=async s=>{setCustomShapes(s);await storageSet("isv-shapes",s);showSaved("Shapes saved");};
+const persistSettings=async s=>{setSettings(s);await storageSet("isv-settings",s);showSaved("Settings saved");};
+const totalM2=quote.members.reduce((sum,m)=>sum+memberM2(m),0);
+const usedSpecs=[1,2,3].filter(s=>quote.members.some(m=>(m.spec||1)===s)||quote.coats.some(c=>(c.spec||1)===s));
+const getFileName=()=>safeFileName(yymmdd(),quote.clientName,quote.projectName);
+const saveJSON=()=>{try{const data=JSON.stringify({quote,settings,products,customShapes},null,2);const blob=new Blob([data],{type:"application/json"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=getFileName()+".json";document.body.appendChild(a);a.click();setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},100);}catch(err){alert("Could not save file: "+err.message);}};
+const loadJSON=e=>{const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=ev=>{try{const data=JSON.parse(ev.target.result);if(data.quote)setQuote(data.quote);if(data.settings)setSettings(data.settings);if(data.products)setProducts(data.products);if(data.customShapes)setCustomShapes(data.customShapes);setStep(1);}catch(err){alert("Could not read file.");}};reader.readAsText(file);};
+const updateMember=useCallback((id,updated)=>setQuote(q=>({...q,members:q.members.map(m=>m.id===id?updated:m)})),[]);
+const updateCoat=useCallback((id,updated)=>setQuote(q=>({...q,coats:q.coats.map(c=>c.id===id?updated:c)})),[]);
+const handlePDFImport=rows=>{setQuote(q=>({...q,members:[...q.members.filter(m=>!(m.dims&&Object.keys(m.dims).length===0)),...rows]}));setShowPDFImport(false);setStep(2);};
+const setSpecName=(s,val)=>setQuote(q=>({...q,specNames:{...q.specNames,[s]:val}}));
+const setSpecBlast=(s,val)=>setQuote(q=>({...q,specBlast:{...q.specBlast,[s]:val}}));
+const steps=["Job Details","Surface Area","Coating System","Summary"];
+if(!loaded)return h("div",{style:{minHeight:"100vh",background:bg,display:"flex",alignItems:"center",justifyContent:"center",color:muted,fontFamily:"Georgia,serif"}},"Loading...");
+return h("div",{style:{minHeight:"100vh",background:bg,color:textCol,fontFamily:"Georgia,serif"}},
+h("style",null,'@media print{body,html{background:#fff!important;margin:0!important;padding:0!important;}body>div>div{min-height:auto!important;background:#fff!important;}.no-print{display:none!important;}.report-printable{border-radius:0!important;box-shadow:none!important;position:static!important;}.report-printable>div:last-child{display:none!important;}@page{margin:1cm;}}'),
+showSettings&&h(SettingsPanel,{settings,products,customShapes,onSaveSettings:persistSettings,onSaveProducts:persistProducts,onSaveShapes:persistShapes,onClose:()=>setShowSettings(false)}),
+showReport&&h(ReportView,{quote,settings,products,fileName:getFileName(),onClose:()=>setShowReport(false)}),
+showPDFImport&&h(PDFImportModal,{onImport:handlePDFImport,onClose:()=>setShowPDFImport(false)}),
+savedMsg&&h("div",{style:{position:"fixed",bottom:"1.5rem",right:"1.5rem",background:"#2e7a2e",color:"#fff",padding:"0.5rem 1rem",borderRadius:6,fontSize:"0.82rem",fontWeight:"bold",zIndex:999,boxShadow:"0 2px 12px rgba(0,0,0,0.4)"}},savedMsg),
+h("div",{style:{height:3,background:"linear-gradient(90deg,#0e3a6a,#52a0c8,#0e3a6a)"}}),
+h("div",{style:{padding:"0.85rem 1.5rem",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid rgba(82,160,200,0.18)",flexWrap:"wrap",gap:"0.5rem"}},
+h("div",{style:{display:"flex",alignItems:"center",gap:"0.75rem"}},
+h("div",{style:{width:38,height:38,background:"linear-gradient(135deg,#0e3a6a,#52a0c8)",borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.1rem"}},"\uD83C\uDFD7"),
+h("div",null,h("div",{style:{fontWeight:"bold",color:blue,letterSpacing:"0.06em",fontSize:"0.95rem"}},settings.companyName+" BLAST & COAT"),h("div",{style:{fontSize:"0.62rem",color:muted,letterSpacing:"0.12em",textTransform:"uppercase"}},"Estimating Tool"))),
+h("div",{style:{display:"flex",gap:"0.45rem",alignItems:"center",flexWrap:"wrap"}},
+h("button",{style:btnOutline,onClick:()=>document.getElementById("loadFile").click()},"Open"),
+h("input",{id:"loadFile",type:"file",accept:".json",style:{display:"none"},onChange:loadJSON}),
+h("button",{style:btnOutline,onClick:saveJSON},"Save JSON"),
+h("button",{style:{...btnOutline,color:muted},onClick:()=>setShowSettings(true)},"Settings"),
+h("button",{style:btnGold,onClick:()=>{setQuote(blankQuote());setStep(1);}},"+ New Quote"))),
+h("div",{style:{display:"flex",padding:"0.65rem 1.5rem",gap:"0.25rem",borderBottom:"1px solid rgba(82,160,200,0.18)",background:"rgba(255,255,255,0.015)",flexWrap:"wrap",alignItems:"center"}},
+steps.map((s,i)=>h("button",{key:i,onClick:()=>setStep(i+1),style:{background:step===i+1?"linear-gradient(135deg,#0e3a6a,#52a0c8)":"transparent",border:step===i+1?"none":"1px solid rgba(82,160,200,0.18)",color:step===i+1?"#fff":muted,borderRadius:5,padding:"0.38rem 0.9rem",fontSize:"0.78rem",cursor:"pointer",fontWeight:step===i+1?"bold":"normal",letterSpacing:"0.04em"}},(i+1)+". "+s)),
+totalM2>0&&h("div",{style:{marginLeft:"auto",color:green,fontWeight:"bold",fontSize:"0.88rem"}},"Total: "+totalM2.toFixed(2)+" m2")),
+h("div",{style:{maxWidth:1020,margin:"0 auto",padding:"1.25rem 1.5rem"}},
+step===1&&h("div",{style:cardStyle},h("div",{style:secTitle},"Job Details"),
+h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.8rem"}},
+[["clientName","Client Name","Barra Steel (VIC) Pty Ltd"],["projectName","Project Name","Mt Martha"],["jobNumber","Job / Quote No.","S00865"],["date","Date",""]].map(item=>h("div",{key:item[0]},h("label",{style:labelStyle},item[1]),h("input",{style:inputStyle,placeholder:item[2],value:quote[item[0]]||"",onChange:e=>setQuote({...quote,[item[0]]:e.target.value})}))),
+h("div",{style:{gridColumn:"1/-1"}},h("label",{style:labelStyle},"Notes"),h("input",{style:inputStyle,placeholder:"Any relevant notes...",value:quote.notes||"",onChange:e=>setQuote({...quote,notes:e.target.value})}))),
+h("button",{style:{...btnPrimary,marginTop:"1rem"},onClick:()=>setStep(2)},"Next: Surface Area")),
+step===2&&h("div",{style:cardStyle},
+h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"0.75rem",flexWrap:"wrap",gap:"0.5rem"}},
+h("div",{style:secTitle},"Surface Area Calculator"),
+h("div",{style:{display:"flex",gap:"0.5rem"}},h("button",{style:{...btnGreen,fontSize:"0.8rem",padding:"0.38rem 0.85rem"},onClick:()=>setShowPDFImport(true)},"Import from PDF"),h("button",{style:btnOutline,onClick:()=>setQuote({...quote,members:[...quote.members,{id:newId(),type:"SHS",dims:{},description:"",qty:1,spec:1}]})},"+ Add Member"))),
+h("div",{style:{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:"0.5rem",marginBottom:"0.75rem",padding:"0.6rem 0.65rem",background:"rgba(255,255,255,0.02)",borderRadius:6,border:"1px solid rgba(82,160,200,0.1)"}},
+[1,2,3].map(s=>{const sm=quote.members.filter(m=>(m.spec||1)===s).reduce((sum,m)=>sum+memberM2(m),0);return h("div",{key:s,style:{fontSize:"0.75rem",color:SPEC_COLORS[s]}},h("span",{style:{fontWeight:"bold"}},"Spec "+s+": "),sm.toFixed(2)+" m2");})),
+quote.members.map(m=>h(MemberRow,{key:m.id,row:m,onChange:updated=>updateMember(m.id,updated),onDelete:()=>setQuote(q=>({...q,members:q.members.filter(x=>x.id!==m.id)})),onDuplicate:()=>setQuote(q=>({...q,members:[...q.members,{...m,id:newId()}]})),customShapes})),
+h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:"1rem",paddingTop:"0.75rem",borderTop:"1px solid rgba(82,160,200,0.18)"}},
+h("div",{style:{color:green,fontWeight:"bold",fontSize:"1.05rem"}},"Total: "+totalM2.toFixed(2)+" m2"),
+h("button",{style:btnPrimary,onClick:()=>setStep(3)},"Next: Coating System"))),
+step===3&&h("div",{style:cardStyle},h("div",{style:secTitle},"Coating System"),
+[1,2,3].map(s=>{const specM2val=quote.members.filter(m=>(m.spec||1)===s).reduce((sum,m)=>sum+memberM2(m),0);const hasSpec=quote.members.some(m=>(m.spec||1)===s)||quote.coats.some(c=>(c.spec||1)===s);if(s>1&&!hasSpec)return null;const specCol=SPEC_COLORS[s];const specNm=getSpecName(quote,s);const blastOn=getSpecBlast(quote,s);
+return h("div",{key:s,style:{marginBottom:"1.25rem",borderLeft:"3px solid "+specCol,paddingLeft:"1rem"}},
+h("div",{style:{display:"flex",alignItems:"center",gap:"0.75rem",marginBottom:"0.75rem",flexWrap:"wrap"}},
+h(SpecBadge,{spec:s}),
+h("input",{style:{...inputStyle,maxWidth:220,fontWeight:"bold",color:specCol},value:specNm,onChange:e=>setSpecName(s,e.target.value),placeholder:"Spec "+s}),
+h("label",{style:{display:"flex",alignItems:"center",gap:"0.4rem",cursor:"pointer",fontSize:"0.84rem",color:textCol}},
+h("input",{type:"checkbox",checked:blastOn,onChange:e=>setSpecBlast(s,e.target.checked),style:{width:14,height:14}}),
+"Blast \u2014 "+specM2val.toFixed(1)+" m2 @ $"+settings.blastRate+"/m2 = ",
+h("strong",{style:{color:gold}},"$"+(specM2val*settings.blastRate).toFixed(2)))),
+quote.coats.filter(c=>(c.spec||1)===s).map(coat=>h(CoatRow,{key:coat.id,coat,index:quote.coats.indexOf(coat),totalM2:specM2val,products,settings,onChange:updated=>updateCoat(coat.id,updated),onDelete:()=>setQuote(q=>({...q,coats:q.coats.filter(c=>c.id!==coat.id)})),onDuplicate:()=>setQuote(q=>({...q,coats:[...q.coats,{...coat,id:newId()}]}))})),
+h("button",{style:{...btnOutline,fontSize:"0.78rem",marginTop:"0.25rem"},onClick:()=>setQuote(q=>({...q,coats:[...q.coats,{id:newId(),productId:null,dft:"",colour:"",spec:s}]}))},"+ Add Coat to "+specNm));}),
+![2,3].some(s=>quote.members.some(m=>(m.spec||1)===s)||quote.coats.some(c=>(c.spec||1)===s))&&h("button",{style:{...btnOutline,marginBottom:"1rem",fontSize:"0.78rem"},onClick:()=>setQuote(q=>({...q,coats:[...q.coats,{id:newId(),productId:null,dft:"",colour:"",spec:2}]}))},"+ Add Spec 2"),
+h("div",{style:{display:"flex",alignItems:"center",gap:"1rem",padding:"0.7rem 1rem",background:"rgba(255,255,255,0.03)",borderRadius:7,border:"1px solid rgba(82,160,200,0.18)",marginTop:"0.5rem"}},
+h("label",{style:{...labelStyle,margin:0,whiteSpace:"nowrap"}},"Job Loading (%)"),
+h("input",{style:{...inputStyle,maxWidth:90},type:"number",value:quote.loading,onChange:e=>setQuote({...quote,loading:parseFloat(e.target.value)||0}),placeholder:"0"}),
+h("div",{style:{color:muted,fontSize:"0.78rem"}},"e.g. 20 for +20%. Negative for discount.")),
+h("button",{style:{...btnPrimary,marginTop:"1rem"},onClick:()=>setStep(4)},"Next: Summary")),
+step===4&&h("div",{style:cardStyle},h("div",{style:secTitle},"Summary"),
+h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0.75rem",fontSize:"0.86rem",marginBottom:"1.25rem"}},
+h(Stat,{label:"Client",value:quote.clientName||"\u2014",color:textCol}),
+h(Stat,{label:"Project",value:quote.projectName||"\u2014",color:textCol}),
+h(Stat,{label:"Date",value:quote.date,color:textCol}),
+h(Stat,{label:"Total Surface Area",value:totalM2.toFixed(2)+" m2",color:green,bold:true}),
+h(Stat,{label:"Specs",value:usedSpecs.map(s=>getSpecName(quote,s)).join(", "),color:textCol}),
+h(Stat,{label:"Loading",value:quote.loading!==0?(quote.loading>0?"+":"")+quote.loading+"%":"None",color:quote.loading>0?red:green})),
+h("div",{style:{fontSize:"0.78rem",color:muted,marginBottom:"1rem"}},"Save filename: ",h("span",{style:{color:blue,fontFamily:"monospace"}},getFileName())),
+h("div",{style:{display:"flex",gap:"0.75rem",flexWrap:"wrap"}},
+h("button",{style:btnGold,onClick:()=>setShowReport(true)},"View and Print Report"),
+h("button",{style:btnPrimary,onClick:saveJSON},"Save JSON")))));}
+
+ReactDOM.createRoot(document.getElementById("root")).render(h(App));
+</script>
+</body>
+</html>
